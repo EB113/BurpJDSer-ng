@@ -1,12 +1,1 @@
-plugins {
-    id 'com.gradle.enterprise' version '3.3.3'
-}
-
-rootProject.name = 'BurpJDSer-ng'
-
-gradleEnterprise {
-    buildScan {
-        termsOfServiceUrl = 'https://gradle.com/terms-of-service'
-        termsOfServiceAgree = 'yes'
-    }
-}
+rootProject.name = 'Mandrake'

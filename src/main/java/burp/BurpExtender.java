@@ -1,5 +1,7 @@
 package burp;
 
+import burp.MandrakeMessageTab;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -22,10 +24,10 @@ TODO:
 
 public class BurpExtender implements IBurpExtender, IMessageEditorTabFactory, IContextMenuFactory {
 
-    private IBurpExtenderCallbacks callbacks;
-    private IExtensionHelpers helpers;
+    public static IBurpExtenderCallbacks callbacks;
+    public static IExtensionHelpers helpers;
     private PrintStream _stdout;
-    private Utils utils;
+    private JDSer jdSer;
 
     //
     // implement IBurpExtender
@@ -35,11 +37,11 @@ public class BurpExtender implements IBurpExtender, IMessageEditorTabFactory, IC
         this.callbacks = callbacks;
         this.helpers = callbacks.getHelpers();
 
-        this.utils = new Utils(this.helpers, callbacks);
+        this.jdSer = new JDSer(this.helpers, callbacks);
         this._stdout = new PrintStream(callbacks.getStdout());
 
         // set our extension name
-        callbacks.setExtensionName("BurpJDSer-ng by omerc.net");
+        callbacks.setExtensionName("Mandrake");
 
         // register ourselves as a message editor tab factory
         callbacks.registerContextMenuFactory(this);
@@ -53,7 +55,9 @@ public class BurpExtender implements IBurpExtender, IMessageEditorTabFactory, IC
     @Override
     public IMessageEditorTab createNewInstance(IMessageEditorController controller, boolean editable) {
         // create a new instance of our custom editor tab
-        return new SerializedJavaInputTab(controller, editable);
+        //return new SerializedJavaInputTab(controller, editable, helpers, utils, callbacks);
+        //return new JDSerMessageTab(callbacks, helpers, utils, editable);
+        return new MandrakeMessageTab(jdSer, editable);
     }
 
     //
@@ -62,7 +66,7 @@ public class BurpExtender implements IBurpExtender, IMessageEditorTabFactory, IC
     @Override
     public List<JMenuItem> createMenuItems(IContextMenuInvocation invocation) {
         List<JMenuItem> menu = new ArrayList<>();
-        Action reloadJarsAction = new ReloadJarsAction("BurpJDSer-ng: Reload JARs", invocation);
+        Action reloadJarsAction = new ReloadJarsAction("Mandrake: Reload JARs", invocation);
         JMenuItem reloadJars = new JMenuItem(reloadJarsAction);
 
         menu.add(reloadJars);
@@ -80,8 +84,8 @@ public class BurpExtender implements IBurpExtender, IMessageEditorTabFactory, IC
 
         @Override
         public void actionPerformed(ActionEvent e) {
-            _stdout.println("Reloading jars from " + utils.LIB_DIR);
-            utils.refreshSharedClassLoader();
+            _stdout.println("Reloading jars from " + jdSer.LIB_DIR);
+            jdSer.refreshSharedClassLoader();
         }
 
     }
@@ -89,100 +93,5 @@ public class BurpExtender implements IBurpExtender, IMessageEditorTabFactory, IC
     //
     // class implementing IMessageEditorTab
     //
-    class SerializedJavaInputTab implements IMessageEditorTab {
-
-        private final boolean editable;
-        private final ITextEditor txtInput;
-        private byte[] currentMessage;
-        private final byte[] serializeMagic = new byte[]{-84, -19};
-        private byte[] crap;
-
-        public SerializedJavaInputTab(IMessageEditorController controller, boolean editable) {
-
-            this.editable = editable;
-
-            // create an instance of Burp's text editor, to display our deserialized data
-            txtInput = callbacks.createTextEditor();
-            txtInput.setEditable(editable);
-        }
-
-
-        //
-        // implement IMessageEditorTab
-        //
-        @Override
-        public String getTabCaption() {
-            return "Java Object";
-        }
-
-        @Override
-        public Component getUiComponent() {
-            return txtInput.getComponent();
-        }
-
-        @Override
-        public boolean isEnabled(byte[] content, boolean isRequest) {
-            // enable this tab for requests containing the serialized "magic" header
-            return helpers.indexOf(content, serializeMagic, false, 0, content.length) > -1;
-        }
-
-        @Override
-        public void setMessage(byte[] content, boolean isRequest) {
-            if (content == null) {
-                txtInput.setText(null);
-                txtInput.setEditable(false);
-            } else {
-                // save offsets
-                int magicPos = helpers.indexOf(content, serializeMagic, false, 0, content.length);
-                int messageBody = helpers.analyzeRequest(content).getBodyOffset();
-
-                // get serialized data
-                byte[] baSer = Arrays.copyOfRange(content, magicPos, content.length);
-
-                // save the crap buffer for reconstruction
-                crap = Arrays.copyOfRange(content, messageBody, magicPos);
-
-                // deserialize the object
-                txtInput.setText(utils.Deserialize(baSer));
-                txtInput.setEditable(editable);
-            }
-
-            // remember the displayed content
-            currentMessage = content;
-        }
-
-        @Override
-        public byte[] getMessage() {
-            // determine whether the user modified the deserialized data
-            if (txtInput.isTextModified()) {
-                byte[] baObj = new byte[0];
-                try {
-                    baObj = utils.Serialize(txtInput.getText());
-                } catch (Exception ex) {
-                    if (ex instanceof com.thoughtworks.xstream.io.StreamException) callbacks.issueAlert(ex.getCause().getMessage());
-                    Logger.getLogger(BurpExtender.class.getName()).log(Level.SEVERE, null, ex);
-                    return currentMessage;
-                }
-
-                // rebuild with crap buffer
-                byte[] newBody = new byte[baObj.length + crap.length];
-                System.arraycopy(crap, 0, newBody, 0, crap.length);
-                System.arraycopy(baObj, 0, newBody, crap.length, baObj.length);
-
-                return helpers.buildHttpMessage(helpers.analyzeRequest(currentMessage).getHeaders(), newBody);
-            } else {
-                return currentMessage;
-            }
-        }
-
-        @Override
-        public boolean isModified() {
-            return txtInput.isTextModified();
-        }
-
-        @Override
-        public byte[] getSelectedData() {
-            return txtInput.getSelectedText();
-        }
-    }
+    
 }
